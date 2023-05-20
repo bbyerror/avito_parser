@@ -1,2 +1,3 @@
 # avito_parser
- Parser for avito.ru
+ Script - parser for avito.ru, powered by Selenium.
+ 
