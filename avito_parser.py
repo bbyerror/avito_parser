@@ -1,56 +1,111 @@
+'''This module is main module for parser'''
+import json
 from selenium import webdriver
-from selenium.webdriver.common.by import By
 from fake_useragent import UserAgent
+from avito_funcs import AvitoSearcher
 
 
-# target url
-url='https://www.avito.ru/nizhniy_novgorod/noutbuki/apple-ASgCAQICAUCo5A0U9Nlm?cd=1&f=ASgCAQECAUCo5A0U9NlmAUXGmgwVeyJmcm9tIjoyMDAwMCwidG8iOjB9&s=1'
+class Parser:
+    '''main class to guide parser'''     
+    def __init__(self,
+                 link:str,
+                 min_price: int,
+                 max_price: int,
+                 search_items: int,
+                 search_pages: int,
+                 title_file: str):
 
-# user-agent
-ua=UserAgent()
-fake_ua=f'user-agent={ua.random}'
+        self.link = link
+        self.title_file=title_file
+        self.search_items = search_items
+        self.search_pages = search_pages
+        self.max_price = int(max_price)
+        self.min_price = int(min_price)
+        self.data = []
+        self.driver = self.__driver_setup()
 
-# webdriver options
-options=webdriver.ChromeOptions()
-options.add_argument(fake_ua)
-options.add_argument('--disable-blink-features=AutomationControlled')
-options.add_argument('--headless')
+    def __driver_setup(self):
+        """_webdriver and its options_
+        """
+        options = webdriver.ChromeOptions()
+        options.add_argument(f'user-agent={UserAgent().random}')
+        options.add_argument('--disable-blink-features=AutomationControlled')
+        options.add_argument('--headless')
+        self.driver = webdriver.Chrome(options=options)
+        return self.driver
+    def __driver_get_url(self):
+        """__driver_get_url_
+        """
+        self.driver.get(self.link)
 
-driver=webdriver.Chrome(options=options)
+    def next_page(self):
+        """_finds next page btn_
+        """
+        return self.driver.find_element(*AvitoSearcher.NEXT_PAGE_BTN)
 
-try:
-    driver.get(url=url)
-#    print('shit, here we go again')
-    driver.implicitly_wait(40)
- 
-    while driver.find_element(By.CSS_SELECTOR, "[data-marker*='pagination-button/next']"):
-# count items
-        num=1
-        items=driver.find_elements(By.CSS_SELECTOR, "[data-marker='item']")
+    def get_items(self):
+        """_finds items on the page_
+        """
+        return self.driver.find_elements(*AvitoSearcher.ITEMS)
 
+    def get_info(self, item) -> dict:
+        """_item to dict_
+        """
+        link = item.find_element(*AvitoSearcher.LINK).get_attribute('href')
+        item_name = item.find_element(*AvitoSearcher.NAME)
+        description = item.find_element(*AvitoSearcher.DESCRIPTION)
+        price = item.find_element(
+            *AvitoSearcher.PRICE).get_attribute('content')
+        self.min_price=int(price)
+        return {'item_name': item_name.text,
+                'price': price,
+                'description': description.text,
+                'link': link}
+    def write_info(self,info:dict):
+        """_write info_
+        """
+        with open(f'{self.title_file}.txt', 'a', encoding='utf-8') as file:
+            file.write('\n')
+            json.dump(info, file, ensure_ascii=False)
+
+    def pasrse_page(self) -> list:
+        """_parse page_
+        """
+        items = self.get_items()
         for item in items:
-            link=item.find_element(By.CSS_SELECTOR, "[data-marker='item-title']").get_attribute('href')
-            item_name=item.find_element(By.CSS_SELECTOR, "[itemprop='name']")
-            description=item.find_element(By.CSS_SELECTOR, "[class*='item-description']")
-            price=item.find_element(By.CSS_SELECTOR, "[itemprop='price']").get_attribute('content')
-            print(f'Item № {num} info parsed.')
-# writeing item's info
-            items_to_write=f''' \n{num}
-            item_name : {item_name.text}
-            price: {price}
-            description': {description.text}
-            link: {link}
-            '''
-# writeing item's info in file
-            with open('avito.txt','a',encoding='utf-8') as file: 
-                file.write(f'''{items_to_write}
-                ''')
-                print('item info writed.')
-            num+=1
+            info = self.get_info(item)
+            self.write_info(info=info)
+    def parse_avito(self):
+        """_fn parser runner_
+        """
+        self.__driver_get_url()
+        item_cnt = 1
+        page_cnt = 1
+        while page_cnt <= self.search_pages and item_cnt <= self.search_items and self.min_price <= self.max_price:
+            page_cnt += 1
+            self.pasrse_page()
+            item_cnt += 1
+            if self.next_page():
+                self.next_page().click()
+            else:
+                break
 
-        driver.find_element(By.CSS_SELECTOR, "[data-marker*='pagination-button/next']").click()
-except Exception as ex:
-    print(ex)
-finally:
-    driver.close()
-    driver.quit()
+    def close_parser(self):
+        """_parser close_
+        """
+        self.driver.quit()
+
+
+if __name__ == '__main__':
+    parser = Parser(search_items=1000,
+                    search_pages=1000,
+                    link='https://www.avito.ru/',
+                    title_file='parsed_data',
+                    max_price=50000,
+                    min_price=20000)
+    try:
+        parser.parse_avito()
+    except Exception as ex:
+        print(ex)
+    finally:
+        parser.close_parser()
